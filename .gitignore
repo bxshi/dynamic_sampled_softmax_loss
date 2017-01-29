@@ -185,3 +185,5 @@ ENV/
 
 # Rope project settings
 .ropeproject
+.idea/
+zero_out.cc
