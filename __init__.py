@@ -1,1 +1,1 @@
-from dynamic_sampled_softmax_loss import DynamicSampledSoftmaxLoss
+from .dynamic_sampled_softmax_loss import DynamicSampledSoftmaxLoss
