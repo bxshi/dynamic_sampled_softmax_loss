@@ -233,7 +233,7 @@ class DynamicSampledSoftmaxLoss(object):
 
             return true_logits_flat, sampled_logits
 
-    def _softmax_corss_entropy_with_logits(self, true_logits, sampled_logits, num_true):
+    def _softmax_corss_entropy_with_logits(self, true_logits, sampled_logits, num_true, rescale=False):
 
         num_true = tf.cast(num_true, tf.int32)
         num_true_start = tf.cumsum(num_true, axis=0, exclusive=True)
@@ -248,8 +248,11 @@ class DynamicSampledSoftmaxLoss(object):
             true_logits_row = tf.slice(true_logits, start_idx, num_true_len)
 
             logits = tf.concat_v2([true_logits_row, sampled_logits_row], axis=0)
-            labels = tf.concat_v2([tf.ones_like(true_logits_row) / tf.cast(num_true_len, tf.float32),
-                                   zero_labels], axis=0)
+            if rescale:
+                labels = tf.concat_v2([tf.ones_like(true_logits_row), zero_labels], axis=0)
+            else:
+                labels = tf.concat_v2([tf.ones_like(true_logits_row) / tf.cast(num_true_len, tf.float32),
+                                       zero_labels], axis=0)
 
             return tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
 
@@ -257,6 +260,24 @@ class DynamicSampledSoftmaxLoss(object):
                          dtype=tf.float32,
                          parallel_iterations=10, back_prop=True, swap_memory=True,
                          name="dynamic_softmax_cross_entropy")
+
+    def sampled_softmax_loss_w_weight(self, weights, biases, labels,
+                                      num_true, inputs, num_sampled,
+                                      num_classes, sampled_values=None,
+                                      remove_accidental_hits=True,
+                                      partition_strategy='mod',
+                                      name="sampled_softmax_loss_w_rescale_weight"):
+        true_logits_flat, sampled_logits = self._compute_sampled_logits(weights=weights, biases=biases,
+                                                                        labels=labels, num_true=num_true,
+                                                                        inputs=inputs, num_sampled=num_sampled,
+                                                                        num_classes=num_classes,
+                                                                        sampled_values=sampled_values,
+                                                                        subtract_log_q=True,
+                                                                        remove_accidental_hits=remove_accidental_hits,
+                                                                        partition_strategy=partition_strategy,
+                                                                        name=name)
+        return self._softmax_corss_entropy_with_logits(true_logits=true_logits_flat, sampled_logits=sampled_logits,
+                                                       num_true=num_true, rescale=True)
 
     def sampled_softmax_loss(self, weights, biases, labels,
                              num_true, inputs, num_sampled,
