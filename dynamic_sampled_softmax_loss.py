@@ -335,11 +335,39 @@ class DynamicSampledSoftmaxLoss(object):
         labels = tf.cast(labels, tf.int64)
       labels_flat = tf.reshape(labels, [-1])
 
-      if num_true.dtype != tf.int64:
-        num_true = tf.cast(num_true, tf.int64)
+      if num_true.dtype != tf.int32:
+        num_true = tf.cast(num_true, tf.int32)
       num_true = tf.reshape(num_true, [-1])
+
       # tf.slice(all_ids, num_true_start[i], num_true[i]) will get the true classes of training instance i
       num_true_start = tf.cumsum(num_true, axis=0, exclusive=True)
+
+      total_num_true = tf.reduce_sum(num_true)
+
+      # Create a [total_num_true] index vector containing indices in inputs
+      empty_input_idx = tf.zeros_like(labels_flat, dtype=tf.int32)
+
+      def _compute_input_idx(a, x):
+        print("_compute_input_idx input x shape ", x.get_shape())
+        start_idx, current_len, current_val = tf.unstack(x, num=3, axis=0)
+        update_indices = tf.range(start_idx,
+                                  limit=start_idx+current_len,
+                                  name="update_indices_range")
+        return a + tf.sparse_to_dense(update_indices,
+                                      a.shape,
+                                      current_val,
+                                      default_value=0,
+                                      validate_indices=True)
+
+      input_idices_elems = tf.stack([num_true_start,
+                                     num_true,
+                                     tf.range(0, tf.shape(inputs)[0],
+                                              dtype=tf.int32)],
+                                    axis=1)
+
+      print(input_idices_elems.get_shape())
+      # an index vector with shape [total_num_true]
+      input_idices = tf.foldl(_compute_input_idx, input_idices_elems, initializer=empty_input_idx)
 
       if sampled_values is None:
         sampled_values = self._uniform_candidate_sampler(true_classes=labels,
@@ -360,43 +388,16 @@ class DynamicSampledSoftmaxLoss(object):
       # true_b shape is [total_num_true]
       true_b = tf.slice(all_b, [0], tf.shape(labels_flat))
 
-      # print(inputs.get_shape(), num_true_start.get_shape(), num_true.get_shape())
 
-      def _calc_true_logit(_, x):
-        # used_input shape is [dim]
-        # start_idx shape is [1]
-        # num_true_val shape is [1]
-        used_input, start_idx, num_true_len = x
-        used_input = tf.reshape(used_input, [-1])
+      # new_inputs, the shape is [total_num_true, dim]
+      new_inputs = tf.nn.embedding_lookup(inputs, input_idices, partition_strategy=partition_strategy)
+      row_wise_dots = tf.multiply(
+        new_inputs,  # [total_num_true, dim]
+        true_w  # [total_num_true, dim]
+      )  # [total_num_true, dim]
 
-        # used_w shape is [num_true_val, dim]
-        used_w = tf.slice(true_w, tf.stack([start_idx, 0]), tf.stack([num_true_len, -1]))
-
-        # used_true_logits shape is [num_true_val]
-        used_true_logits = tf.matmul(tf.reshape(used_input, [1, -1]), used_w, transpose_b=True)
-
-        # create an update vector that updates [start_idx : (start_idx + num_true_len)]'s logits
-        logit_update = tf.sparse_to_dense(sparse_indices=tf.range(start_idx, start_idx + num_true_len),
-                                          output_shape=tf.shape(labels),
-                                          sparse_values=tf.reshape(used_true_logits, [-1]),
-                                          default_value=0.0,
-                                          validate_indices=True)
-
-        return logit_update
-
-      # true_logits shape is [total_num_true]
-      scan_res = tf.scan(_calc_true_logit,
-                         [inputs,
-                          tf.cast(num_true_start, tf.int32),
-                          tf.cast(num_true, tf.int32)],
-                         initializer=tf.zeros_like(labels, dtype=tf.float32),
-                         parallel_iterations=10, back_prop=True, swap_memory=True,
-                         name="scan_dynamic_softmax_true_logits")
-
-      # print("scan res", scan_res.get_shape())
-      true_logits = tf.reduce_sum(scan_res, axis=0)
-      # print("reduce_sum true_logits", true_logits.get_shape())
-      true_logits += true_b
+      true_logits_flat = tf.reshape(_sum_rows(row_wise_dots), [-1])  # [total_num_true]
+      true_logits_flat += true_b
 
       sampled_w = tf.slice(all_w, tf.stack([tf.shape(labels_flat)[0], 0]), [-1, -1])
       sampled_b = tf.slice(all_b, tf.shape(labels_flat), [-1])
@@ -404,7 +405,7 @@ class DynamicSampledSoftmaxLoss(object):
       sampled_logits = tf.matmul(inputs, sampled_w, transpose_b=True) + sampled_b
 
       if remove_accidental_hits:
-        acc_hits = self._compute_accidental_hits(labels_flat, num_true, sampled)
+        acc_hits = self._compute_accidental_hits(labels_flat, tf.cast(num_true, tf.int64), sampled)
         acc_indices, acc_ids, acc_weights = acc_hits
         acc_indices_2d = tf.reshape(acc_indices, [-1, 1])
         acc_ids_2d_int32 = tf.reshape(tf.cast(acc_ids, tf.int32), [-1, 1])
@@ -421,11 +422,11 @@ class DynamicSampledSoftmaxLoss(object):
           validate_indices=False)
 
       if subtract_log_q:
-        true_logits -= tf.log(true_expected_count)
+        true_logits_flat -= tf.log(true_expected_count)
         sampled_logits -= tf.log(sampled_expected_count)
       # print("true_logits ", true_logits.get_shape())
 
-      return true_logits, sampled_logits
+      return true_logits_flat, sampled_logits
 
   def _softmax_corss_entropy_with_logits(self, true_logits, sampled_logits, num_true):
 
@@ -471,6 +472,13 @@ class DynamicSampledSoftmaxLoss(object):
                                                                     remove_accidental_hits=remove_accidental_hits,
                                                                     partition_strategy=partition_strategy,
                                                                     name=name)
+    print("true_logits_flat", true_logits_flat.get_shape())
+    print("sampled_logits", sampled_logits.get_shape())
     # The softmax cross entropy is correct, the problem arises from compute_sampled_logits
+    # return tf.nn.softmax_cross_entropy_with_logits(labels=tf.concat([tf.ones_like(tf.reshape(true_logits_flat, [1, -1]),
+    #                                                                               dtype=tf.float32),
+    #                                                                  tf.zeros_like(sampled_logits,
+    #                                                                                dtype=tf.float32)], axis=1),
+    #                                                logits=tf.concat([tf.reshape(true_logits_flat, [1, -1]), sampled_logits], axis=1))
     return self._softmax_corss_entropy_with_logits(true_logits=true_logits_flat, sampled_logits=sampled_logits,
                                                    num_true=num_true)
