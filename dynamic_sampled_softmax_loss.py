@@ -59,6 +59,10 @@ class DynamicSampledSoftmaxLoss(object):
     """
 
     seed1, seed2 = tf.get_seed(seed)
+    if true_classes.dtype != tf.int64:
+      true_classes = tf.cast(true_classes, tf.int64)
+    if num_true.dtype != tf.int64:
+      num_true = tf.cast(num_true, tf.int64)
     return self.__so_module.dynamic_uniform_candidate_sampler(true_classes=true_classes,
                                                               num_true=num_true,
                                                               num_sampled=num_sampled,
@@ -102,7 +106,7 @@ class DynamicSampledSoftmaxLoss(object):
 
     # labels_flat is a [batch_size * num_true] tensor
     # sampled is a [num_sampled] int tensor
-    all_ids = tf.concat([labels_flat, sampled], 0)
+    all_ids = tf.concat_v2([labels_flat, sampled], 0)
 
     # weights shape is [num_classes, dim]
     all_w = tf.nn.embedding_lookup(
@@ -118,14 +122,14 @@ class DynamicSampledSoftmaxLoss(object):
     # true_w shape is [batch_size * num_true, dim]
     # row_wise_dots is [batch_size, num_true, dim]
     dim = tf.shape(true_w)[1:2]
-    new_true_w_shape = tf.concat([[-1, num_true], dim], 0)
+    new_true_w_shape = tf.concat_v2([[-1, num_true], dim], 0)
     row_wise_dots = tf.multiply(
       tf.expand_dims(inputs, 1),
       tf.reshape(true_w, new_true_w_shape))
     # We want the row-wise dot plus biases which yields a
     # [batch_size, num_true] tensor of true_logits.
     dots_as_matrix = tf.reshape(row_wise_dots,
-                                tf.concat([[-1], dim], 0))
+                                tf.concat_v2([[-1], dim], 0))
     true_logits = tf.reshape(_sum_rows(dots_as_matrix), [-1, num_true])
     true_b = tf.reshape(true_b, [-1, num_true])
     true_logits += true_b
@@ -153,10 +157,10 @@ class DynamicSampledSoftmaxLoss(object):
       acc_indices_2d = tf.reshape(acc_indices, [-1, 1])
       acc_ids_2d_int32 = tf.reshape(
         tf.cast(acc_ids, tf.int32), [-1, 1])
-      sparse_indices = tf.concat([acc_indices_2d, acc_ids_2d_int32], 1,
-                                 "sparse_indices")
+      sparse_indices = tf.concat_v2([acc_indices_2d, acc_ids_2d_int32], 1,
+                                    "sparse_indices")
       # Create sampled_logits_shape = [batch_size, num_sampled]
-      sampled_logits_shape = tf.concat(
+      sampled_logits_shape = tf.concat_v2(
         [tf.shape(labels)[:1], tf.expand_dims(num_sampled, 0)],
         0)
       if sampled_logits.dtype != acc_weights.dtype:
@@ -174,11 +178,11 @@ class DynamicSampledSoftmaxLoss(object):
       sampled_logits -= tf.log(sampled_expected_count)
 
     # Construct output logits and labels. The true labels/logits start at col 0.
-    out_logits = tf.concat([true_logits, sampled_logits], 1)
+    out_logits = tf.concat_v2([true_logits, sampled_logits], 1)
     # true_logits is a float tensor, ones_like(true_logits) is a float tensor
     # of ones. We then divide by num_true to ensure the per-example labels sum
     # to 1.0, i.e. form a proper probability distribution.
-    out_labels = tf.concat([
+    out_labels = tf.concat_v2([
       tf.ones_like(true_logits) / num_true,
       tf.zeros_like(sampled_logits)
     ], 1)
@@ -211,7 +215,7 @@ class DynamicSampledSoftmaxLoss(object):
 
     sampled, true_expected_count, sampled_expected_count = sampled_values
 
-    all_ids = tf.concat([labels_flat, sampled], 0)
+    all_ids = tf.concat_v2([labels_flat, sampled], 0)
 
     all_w = tf.nn.embedding_lookup(weights, all_ids, partition_strategy=partition_strategy)
     all_b = tf.nn.embedding_lookup(biases, all_ids)
@@ -268,9 +272,9 @@ class DynamicSampledSoftmaxLoss(object):
       acc_indices, acc_ids, acc_weights = acc_hits
       acc_indices_2d = tf.reshape(acc_indices, [-1, 1])
       acc_ids_2d_int32 = tf.reshape(tf.cast(acc_ids, tf.int32), [-1, 1])
-      sparse_indices = tf.concat([acc_indices_2d, acc_ids_2d_int32], 1, 'sparse_indices')
+      sparse_indices = tf.concat_v2([acc_indices_2d, acc_ids_2d_int32], 1, 'sparse_indices')
 
-      sampled_logits_shape = tf.concat([tf.shape(num_true), tf.expand_dims(num_sampled, 0)], 0);
+      sampled_logits_shape = tf.concat_v2([tf.shape(num_true), tf.expand_dims(num_sampled, 0)], 0);
       if sampled_logits.dtype != acc_weights.dtype:
         acc_weights = tf.cast(acc_weights, sampled_logits.dtype)
       sampled_logits += tf.sparse_to_dense(
@@ -351,10 +355,10 @@ class DynamicSampledSoftmaxLoss(object):
         print("_compute_input_idx input x shape ", x.get_shape())
         start_idx, current_len, current_val = tf.unstack(x, num=3, axis=0)
         update_indices = tf.range(start_idx,
-                                  limit=start_idx+current_len,
+                                  limit=start_idx + current_len,
                                   name="update_indices_range")
         return a + tf.sparse_to_dense(update_indices,
-                                      a.shape,
+                                      tf.shape(a),
                                       current_val,
                                       default_value=0,
                                       validate_indices=True)
@@ -378,7 +382,7 @@ class DynamicSampledSoftmaxLoss(object):
 
       sampled, true_expected_count, sampled_expected_count = sampled_values
 
-      all_ids = tf.concat([labels_flat, sampled], 0)
+      all_ids = tf.concat_v2([labels_flat, sampled], 0)
 
       all_w = tf.nn.embedding_lookup(weights, all_ids, partition_strategy=partition_strategy)
       all_b = tf.nn.embedding_lookup(biases, all_ids)
@@ -387,7 +391,6 @@ class DynamicSampledSoftmaxLoss(object):
       true_w = tf.slice(all_w, [0, 0], tf.stack([tf.shape(labels_flat)[0], -1]))
       # true_b shape is [total_num_true]
       true_b = tf.slice(all_b, [0], tf.shape(labels_flat))
-
 
       # new_inputs, the shape is [total_num_true, dim]
       new_inputs = tf.nn.embedding_lookup(inputs, input_idices, partition_strategy=partition_strategy)
@@ -409,9 +412,9 @@ class DynamicSampledSoftmaxLoss(object):
         acc_indices, acc_ids, acc_weights = acc_hits
         acc_indices_2d = tf.reshape(acc_indices, [-1, 1])
         acc_ids_2d_int32 = tf.reshape(tf.cast(acc_ids, tf.int32), [-1, 1])
-        sparse_indices = tf.concat([acc_indices_2d, acc_ids_2d_int32], 1, 'sparse_indices')
+        sparse_indices = tf.concat_v2([acc_indices_2d, acc_ids_2d_int32], 1, 'sparse_indices')
 
-        sampled_logits_shape = tf.concat([tf.shape(num_true), tf.expand_dims(num_sampled, 0)], 0);
+        sampled_logits_shape = tf.concat_v2([tf.shape(num_true), tf.expand_dims(num_sampled, 0)], 0);
         if sampled_logits.dtype != acc_weights.dtype:
           acc_weights = tf.cast(acc_weights, sampled_logits.dtype)
         sampled_logits += tf.sparse_to_dense(
@@ -442,12 +445,12 @@ class DynamicSampledSoftmaxLoss(object):
 
       # print(sampled_logits_row.get_shape(), start_idx.get_shape(), num_true_len.get_shape())
       # print(true_logits.get_shape())
-      true_logits_row = tf.slice(true_logits, [start_idx], [num_true_len])
+      true_logits_row = tf.slice(true_logits, start_idx, num_true_len)
       # print(true_logits_row.get_shape())
 
-      logits = tf.concat([true_logits_row, sampled_logits_row], axis=0)
-      labels = tf.concat([tf.ones_like(true_logits_row) / tf.cast(num_true_len, tf.float32),
-                          zero_labels], axis=0)
+      logits = tf.concat_v2([true_logits_row, sampled_logits_row], axis=0)
+      labels = tf.concat_v2([tf.ones_like(true_logits_row) / tf.cast(num_true_len, tf.float32),
+                             zero_labels], axis=0)
 
       return tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
 
@@ -474,11 +477,5 @@ class DynamicSampledSoftmaxLoss(object):
                                                                     name=name)
     print("true_logits_flat", true_logits_flat.get_shape())
     print("sampled_logits", sampled_logits.get_shape())
-    # The softmax cross entropy is correct, the problem arises from compute_sampled_logits
-    # return tf.nn.softmax_cross_entropy_with_logits(labels=tf.concat([tf.ones_like(tf.reshape(true_logits_flat, [1, -1]),
-    #                                                                               dtype=tf.float32),
-    #                                                                  tf.zeros_like(sampled_logits,
-    #                                                                                dtype=tf.float32)], axis=1),
-    #                                                logits=tf.concat([tf.reshape(true_logits_flat, [1, -1]), sampled_logits], axis=1))
     return self._softmax_corss_entropy_with_logits(true_logits=true_logits_flat, sampled_logits=sampled_logits,
                                                    num_true=num_true)

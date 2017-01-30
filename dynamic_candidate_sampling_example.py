@@ -446,9 +446,9 @@ class TestDynamicCandidateSamplingLoss(unittest.TestCase):
       dSampledLoss = DynamicSampledSoftmaxLoss("./cmake-build-debug/libdynamic_sampled_softmax_loss.dylib")
 
       true_classes = tf.Variable([1,
-                                  2,3,
-                                  1,2,4,
-                                  3,4], trainable=False, dtype=tf.int64)
+                                  2, 3,
+                                  1, 2, 4,
+                                  3, 4], trainable=False, dtype=tf.int64)
       num_true = tf.Variable([1,
                               2,
                               3,
@@ -462,12 +462,13 @@ class TestDynamicCandidateSamplingLoss(unittest.TestCase):
                                                biases=softmax_biases, labels=true_classes, num_true=num_true,
                                                inputs=inputs,
                                                num_sampled=5, num_classes=10,
-                                               sampled_values=dSampledLoss._uniform_candidate_sampler(true_classes,
-                                                                                                      num_true,
-                                                                                                      num_sampled=5,
-                                                                                                      unique=True,
-                                                                                                      range_max=10,
-                                                                                                      seed=12),
+                                               sampled_values=dSampledLoss._uniform_candidate_sampler(
+                                                 true_classes,
+                                                 num_true,
+                                                 num_sampled=5,
+                                                 unique=True,
+                                                 range_max=10,
+                                                 seed=12),
                                                remove_accidental_hits=True)
 
       opt = tf.train.GradientDescentOptimizer(learning_rate=0.01)
@@ -531,7 +532,8 @@ def test_compute_gradient_single_element(self):
                                                    [softmax_weights, softmax_biases, inputs])
 
     w_grad_res, b_grad_res, i_grad_res, \
-    tf_w_grad_res, tf_b_grad_res, tf_i_grad_res = sess.run([w_grad, b_grad, i_grad, tf_w_grad, tf_b_grad, tf_i_grad])
+    tf_w_grad_res, tf_b_grad_res, tf_i_grad_res = sess.run(
+      [w_grad, b_grad, i_grad, tf_w_grad, tf_b_grad, tf_i_grad])
 
     np.testing.assert_almost_equal(loss_res, tf_loss_res)
 
