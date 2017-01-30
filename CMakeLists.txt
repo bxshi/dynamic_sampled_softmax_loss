@@ -12,7 +12,7 @@ if (${OS} STREQUAL "Darwin")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -undefined dynamic_lookup")
 endif ()
 
-EXEC_PROGRAM(python3 ARGS "-c 'import tensorflow as tf; print(tf.sysconfig.get_include())'" OUTPUT_VARIABLE TF_FILES)
+EXEC_PROGRAM(python3 ARGS "-c 'import tensorflow as tf; print(tf.sysconfig.get_include())'" OUTPUT_VARIABLE TF_FILES ERROR_VARIABLE TF_ERRORS)
 message(STATUS "TensorFlow include dir: " ${TF_FILES})
 
 set(SOURCE_FILES dynamic_candidate_sampler_ops.cc dynamic_range_sampler.cc dynamic_range_sampler.h dynamic_candidate_sampling_ops.cc)
