@@ -250,10 +250,15 @@ class DynamicSampledSoftmaxLoss(object):
             logits = tf.concat_v2([true_logits_row, sampled_logits_row], axis=0)
             if rescale:
                 labels = tf.concat_v2([tf.ones_like(true_logits_row), zero_labels], axis=0)
+                logits_max = tf.reduce_max(logits)
+                logits_rescaled = logits - logits_max
+                logits_exp = tf.exp(logits_rescaled)
+                logits_sum = tf.reduce_sum(logits_exp)
+                logits_new = (logits_exp / logits_sum)
+                return -tf.reduce_sum(tf.log(tf.clip_by_value(logits_new, 1e-10, 1.0)) * tf.cast(labels, tf.float32))
             else:
                 labels = tf.concat_v2([tf.ones_like(true_logits_row) / tf.cast(num_true_len, tf.float32),
                                        zero_labels], axis=0)
-
             return tf.nn.softmax_cross_entropy_with_logits(labels=labels, logits=logits)
 
         return tf.map_fn(softmax_cross_entropy_helper, [sampled_logits, num_true_start, num_true],
